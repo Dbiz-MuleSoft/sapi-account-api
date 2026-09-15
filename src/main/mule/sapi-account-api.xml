@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+	<flow name="sapi-account-api-main-flow" doc:id="sapi-account-api-main-flow">
+		<http:listener config-ref="HTTP_Listener_config" path="/api/v1/accounts" method="POST" doc:name="POST /api/v1/accounts">
+			<http:response statusCode="#[vars.httpStatus default 201]">
+				<http:headers><![CDATA[#[{"x-correlation-id": vars.correlationId default correlationId}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:headers><![CDATA[#[{"x-correlation-id": vars.correlationId default correlationId}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+
+		<set-variable value="#[attributes.headers['x-correlation-id'] default correlationId]" doc:name="Set Correlation ID" variableName="correlationId"/>
+		
+		<logger level="INFO" doc:name="Log Start Request" message="Received POST /api/v1/accounts request [CorrelationId: #[vars.correlationId]]"/>
+
+		<flow-ref doc:name="Flow Reference - create-account-subflow" name="create-account-subflow"/>
+
+		<logger level="INFO" doc:name="Log End Request" message="Successfully processed POST /api/v1/accounts request [CorrelationId: #[vars.correlationId]]"/>
+		
+		<error-handler ref="global-error-handler" />
+	</flow>
+
+</mule>
