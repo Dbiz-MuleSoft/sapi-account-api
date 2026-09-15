@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+		http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+	<sub-flow name="create-account-subflow" doc:id="create-account-subflow">
+		<logger level="INFO" doc:name="Log Input Payload" message="Processing account creation payload [CorrelationId: #[vars.correlationId]]"/>
+		
+		<!-- 1. Capture Input Fields -->
+		<set-variable value="#[payload.accountId]" doc:name="Set Account ID Variable" variableName="accountId"/>
+		<set-variable value="#[payload.email]" doc:name="Set Email Variable" variableName="email"/>
+
+		<!-- 2. Validation Module Checks -->
+		<validation:is-not-blank doc:name="Validate accountId Not Blank" value="#[vars.accountId]" message="Field 'accountId' is mandatory and cannot be blank."/>
+		<validation:is-not-blank doc:name="Validate email Not Blank" value="#[vars.email]" message="Field 'email' is mandatory and cannot be blank."/>
+		<validation:is-email doc:name="Validate Email Syntax" email="#[vars.email]" message="Field 'email' must be a valid email address format."/>
+
+		<!-- 3. Duplicate Account Uniqueness Check in MySQL -->
+		<db:select config-ref="Database_Config" doc:name="Select Existing Account by accountId">
+			<db:sql><![CDATA[SELECT account_id FROM accounts WHERE account_id = :accountId]]></db:sql>
+			<db:input-parameters><![CDATA[#[{'accountId': vars.accountId}]]]></db:input-parameters>
+		</db:select>
+
+		<choice doc:name="Choice - Check Duplicate Exists">
+			<when expression="#[sizeOf(payload) &gt; 0]">
+				<logger level="WARN" doc:name="Log Duplicate Conflict" message="Duplicate accountId detected: #[vars.accountId]"/>
+				<raise-error type="APP:ACCOUNT_CONFLICT" description="An account with the provided accountId already exists." doc:name="Raise Conflict Error"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Log Uniqueness Verified" message="accountId #[vars.accountId] is unique. Proceeding with database insert."/>
+			</otherwise>
+		</choice>
+
+		<!-- 4. MySQL Insert Operation -->
+		<db:insert config-ref="Database_Config" doc:name="Insert Account Record into MySQL">
+			<db:sql><![CDATA[INSERT INTO accounts (account_id, email, created_at) VALUES (:accountId, :email, NOW())]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				'accountId': vars.accountId,
+				'email': vars.email
+			}]]]></db:input-parameters>
+		</db:insert>
+
+		<!-- 5. Set Status Code & Construct Success Response -->
+		<set-variable value="201" doc:name="Set HTTP Status 201" variableName="httpStatus"/>
+
+		<ee:transform doc:name="Transform Success Response">
+			<ee:message>
+				<ee:set-payload resource="dwl/create-account-response.dwl" />
+			</ee:message>
+		</ee:transform>
+
+		<logger level="INFO" doc:name="Log Creation Success" message="Account created successfully for accountId: #[vars.accountId]"/>
+	</sub-flow>
+
+</mule>
